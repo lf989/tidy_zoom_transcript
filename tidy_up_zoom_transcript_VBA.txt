@@ -1,0 +1,132 @@
+Type working_text    ' Create user-defined type. For ease of passing data
+    current_speaker As String 'whose stanza are we trying to format now
+    other_speaker As String
+    stanza_start As Long   'start of the stanza
+    stanza_len As Long     'end of the stanza
+    next_speaker_pos As Long   'where does the next speaker come in
+    s As String               'for holding current stanza
+    body As String            'to hold the whole of the original text body
+    tidy_text As String       'to hold the text output
+End Type
+
+Public Function find_replace_regex(text As String, pattern As String, replace_text As String, Optional IgnoreCase As Boolean) As String
+
+    Dim regex As Object
+    Set regex = CreateObject("vbscript.regexp")
+    
+    With regex
+        .pattern = pattern
+        .Global = True
+        find_replace_regex = .Replace(text, replace_text)
+    End With
+
+
+End Function
+
+Public Function set_speaker(order As String, txt As String) As String
+
+    'user to input first and second speaker - with error catching
+    set_speaker = InputBox("Who speaks " & order & "? Type the name as it appears in the transcript, including the colon")
+    
+    'if not found, ask for a repeat
+    If InStr(1, txt, set_speaker) = 0 Then
+        
+        Do
+            set_speaker = InputBox("Who speaks " & order & "? Your previous answer was not found in the document. Type the name as it appears in the transcript, including the colon. Type exit to exit")
+        Loop Until InStr(1, txt, set_speaker) <> 0 Or set_speaker = "exit"
+    
+    End If
+
+End Function
+
+Public Function add_stanza(text_to_tidy As working_text) As working_text
+
+    With text_to_tidy
+    
+    
+      .stanza_len = InStr(.stanza_start, .body, .current_speaker) 'finds the position of the current speaker
+      If .stanza_len > 0 Then 'if it's not the last stanza for the current speaker
+        
+        .stanza_start = .stanza_len + Len(.current_speaker) 'move marker
+        
+        .next_speaker_pos = InStr(.stanza_start, .body, .other_speaker) 'where does speaker occur next
+        If .next_speaker_pos = 0 Then .next_speaker_pos = Len(.body) 'if there's no more of this speaker
+        .s = Mid(.body, .stanza_len, .next_speaker_pos - .stanza_len) 'isolate stanza acording to markers
+        .s = .current_speaker & Replace(.s, .current_speaker, "") 'remove all the references to the current speaker, then put it on the beginning
+        .s = Replace(.s, Chr(10), "") 'remove new lines
+        .s = Replace(.s, Chr(13), "") 'remove new lines
+        .tidy_text = .tidy_text & vbNewLine & .s 'append tidy text with a new line to separate
+        
+      End If
+      
+    End With
+
+  add_stanza = text_to_tidy
+  
+End Function
+
+
+Sub tidy_up_zoom_output()
+' Lachlan Fotheringham ©
+'
+' tidy text readout from Zoom
+
+' algorithm:
+' remove leading number and time stamp using regex
+' user inputs speaker labels
+' split into stanzas by speaker
+
+
+Dim str As String, pattern As String
+Dim text_to_tidy As working_text
+Dim spkr1 As String, spkr2 As String
+
+'puts whole document into a string
+Selection.WholeStory 'select the whole doc
+str = Selection 'assign to string
+
+'regex to fit
+pattern = "\r\d+\r.{29}\r" 'this matches the zoom time/date stamp
+
+'removes the time/date stamp using the regex above
+text_to_tidy.body = find_replace_regex(str, pattern, "")
+
+
+'assign speaker names
+spkr1 = set_speaker("frist", text_to_tidy.body)
+If spkr1 = "exit" Then Exit Sub 'with option to quit
+    
+spkr2 = set_speaker("second", text_to_tidy.body)
+If spkr2 = "exit" Then Exit Sub
+
+'format
+'concatonate when it's the same speaker.
+With text_to_tidy
+
+    .stanza_start = 1
+    .tidy_text = ""
+    
+    Do
+    
+        'speaker 1
+        .current_speaker = spkr1
+        .other_speaker = spkr2
+        text_to_tidy = add_stanza(text_to_tidy)
+      
+        'speaker 2
+        .current_speaker = spkr2
+        .other_speaker = spkr1
+        text_to_tidy = add_stanza(text_to_tidy)
+      
+    Loop While .stanza_len > 0 'while the stanza lenth is greater than zero, ie. until the end
+    
+
+    ActiveDocument.StoryRanges(wdMainTextStory).Delete 'clear document
+    ActiveDocument.Content.InsertBefore text:=.tidy_text  'paste formatted text
+
+End With
+
+'
+'
+End Sub
+
